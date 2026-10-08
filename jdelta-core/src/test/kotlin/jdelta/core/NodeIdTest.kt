@@ -49,6 +49,8 @@ class NodeIdTest {
             "junit-jupiter:com.acme.FooTest",
             "junit-jupiter:com.acme.FooTest#works()",
             "junit-jupiter:com.acme.FooTest\$Nested#works(java.lang.String, int)",
+            "junit-jupiter:com.acme.FooTest#change includes tests (scenario 6)()",
+            ":app|com/acme/FooTest#change (scenario 6)()V",
         ],
     )
     fun `canonical round-trips through parse`(canonical: String) {

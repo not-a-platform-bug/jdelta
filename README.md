@@ -121,6 +121,51 @@ Report excerpt (scenario 3):
 | 1 | `com.acme.app.CheckoutServiceTest#checksOut()` | OBSERVED | CheckoutService#checkout(Order) → CheckoutServiceTest#checksOut() |
 ```
 
+## When to use it
+
+**Good fit**
+
+- **Multi-module Gradle projects whose test suite takes minutes.** Running the impacted tests first gives a failure signal before the full suite finishes. In the measurement below, the selected tests took 3–41% of total test time.
+- **PR review and CI reports.** Even without test traces, `jdelta diff` shows what each change means at the ABI level: whether downstream modules must recompile, whether a constant was inlined, whether a Kotlin `inline` body changed, whether framework metadata changed.
+- **Mixed Java/Kotlin code, annotation processors and reflection-heavy frameworks**, where "the file changed" says little about what is actually affected.
+- **Library and shared-module maintainers** who want to know whether a change breaks compile or binary compatibility for dependents.
+
+**Less useful**
+
+- **Small, fast suites.** On a suite that finishes in about 10 seconds, Gradle's fixed overhead (about 2.5 seconds) dominates, so impacted-first saves only seconds.
+- **Changes to code nearly everything executes** (core utilities, constants, build scripts). jdelta selects many tests or falls back to whole modules, and says so in the report.
+- **Projects that are not Gradle + JUnit, or whose tests depend mainly on resources and external configuration.** Resource changes are always handled conservatively.
+
+## Measurements
+
+Measured by running jdelta on a copy of its own repository: 10 Gradle modules, 93 traced test methods, a full suite of 10.6 s wall time (34.8 s of test time summed across parallel forks). Apple M2 Pro (12 cores), JDK 25, Gradle 9.5.1. This is one small repository and a handful of changes, so read it as an indication, not a benchmark.
+
+**Cost**
+
+| Item | Result |
+|---|---|
+| Recording overhead (`jdelta record`) | full suite 11.0–12.7 s → 12.3–13.3 s with the agent (about +5–10%, noisy) |
+| Methods recorded per test | median 179, max 535 |
+| Storage | trace store 1.9 MB, one snapshot 2.3 MB |
+| Analysis time (`impacted-tests`, after the build) | 0.7–1.0 s |
+
+**Selection for typical changes**
+
+| Change | Selected (of 93) | Share of test time | Phase-1 wall time* |
+|---|---|---|---|
+| report formatting body | 9 (`OBSERVED`) | 20% | 5.4 s |
+| core ID parser body (widely used) | 13 (`OBSERVED`) | 27% | 5.4 s |
+| private method in the classifier | 4 (`OBSERVED`) | 3% | 2.9 s |
+| comment only | 0 | 0% | – |
+| new public method on a core enum | 24 (`INFERRED`) | 36% | 6.0 s |
+| `const val` change | 29 (7 `OBSERVED`, 12 `INFERRED`, 10 conservative) | 41% | 6.5 s |
+
+\* Running only the selected tests with Gradle, including about 2.5 s of Gradle overhead; the full suite takes 10.6 s. In addition, 10 tests that have no trace (tests excluded from the `test` task by tag, such as the e2e suite) are always included.
+
+**Did it miss failures?**
+
+Four changes that actually broke tests produced 5 failing tests in the full suite. **All 5 were in the selected set (0 missed)**, ranked between 1st and 9th. Two more changes broke no tests, so they could not be checked for misses.
+
 ## Getting started
 
 Requires JDK 17 or later.
@@ -139,7 +184,7 @@ jdelta record -- ./gradlew test
 # 2. After your change: semantic changes since the merge-base + impacted tests
 jdelta diff main --build                 # Markdown report (--format json)
 jdelta impacted-tests main               # ranked (--format json | gradle-filter)
-./gradlew test $(jdelta impacted-tests main --format gradle-filter)
+jdelta impacted-tests main --format gradle-filter | xargs ./gradlew
 
 # 3. Or run impacted-first from Gradle
 ./gradlew test -Pjdelta.impactedFirst=true -Pjdelta.home=<jdelta distribution> -Pjdelta.base=main

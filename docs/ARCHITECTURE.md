@@ -974,7 +974,7 @@ jdelta report [<base>..<head>] [--format markdown|json]     # diff + impact 전�
 - source 변경 중 class delta로 드러나지 않는 것은 `SOURCE_ONLY_CHANGED`(subject는 `//<path>` 형식의 `FileId`), build script·version catalog 변경은 `BUILD_CONFIGURATION_CHANGED`/`DEPENDENCY_CHANGED`(`CONSERVATIVE_UNKNOWN`)로 report에 넣는다.
 - `record -- ./gradlew test`: command가 `gradlew`/`gradle`이면 init script(`--init-script`)와 `-Pjdelta.record=true`를 주입한다. 끝나면 `.jdelta/traces/raw/<runId>/`를 trace store에 병합하고 raw 파일을 지운다. test가 실패해도 실행된 test의 trace는 병합하고 command의 exit code를 돌려준다. 그 외 command는 `JAVA_TOOL_OPTIONS`에 agent를 넣는 generic mode(agent가 listener jar를 system classloader search에 추가)로 계획했으나 **v0.1 구현에서는 아직 거부한다.**
 - `diff`는 trace store가 있으면 Test Impact와 work plan(recompile 범위, conservative share, fallback)을 report에 넣는다. `impacted-tests`는 trace가 없어도 계산한다(모든 test가 `NO_TRACE_FOR_TEST`).
-- `impacted-tests --format gradle-filter`는 `--tests` 인자 목록을 출력해 Gradle plugin 없이도 쓸 수 있게 한다.
+- `impacted-tests --format gradle-filter`는 module별 `:m:test --tests '<class>.<method>' ...` 인자를 출력해 Gradle plugin 없이도 쓸 수 있게 한다(`| xargs ./gradlew`). `--tests`는 바로 앞 task에만 걸리므로 impacted test가 없는 module이 "No tests found"로 실패하지 않고, 공백이 든 test 이름(Kotlin backtick)은 따옴표로 지킨다.
 
 exit code:
 

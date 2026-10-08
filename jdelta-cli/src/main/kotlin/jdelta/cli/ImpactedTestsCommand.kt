@@ -34,7 +34,7 @@ internal class ImpactedTestsCommand : RevisionCommand(name = "impacted-tests") {
         val tests = analysis.impact!!.plan.items.filterIsInstance<WorkItem.RunTestsFirst>().flatMap { it.tests }
         when (format) {
             "json" -> echo(json(tests))
-            "gradle-filter" -> echo(gradleFilter(tests).joinToString(" "))
+            "gradle-filter" -> echo(gradleFilter(tests, testModules(analysis)).joinToString(" "))
             else -> {
                 analysis.notes.forEach { echo("# $it", err = true) }
                 if (tests.isEmpty()) echo("# no impacted tests", err = true)
@@ -60,10 +60,28 @@ internal class ImpactedTestsCommand : RevisionCommand(name = "impacted-tests") {
         return Json { prettyPrint = true }.encodeToString(JsonObject.serializer(), o)
     }
 
-    /** Gradle `--tests` filter. parameter type은 filter로 표현할 수 없으므로 method 이름까지만 쓴다. */
-    private fun gradleFilter(tests: List<RankedTest>): List<String> = tests
-        .map { t -> if (t.test.method == null) t.test.className else "${t.test.className}.${t.test.method}" }
-        .map { it.replace('$', '.') } // Gradle filter는 nested class를 '.'으로 쓴다
-        .distinct()
-        .flatMap { listOf("--tests", "'$it'") }
+    /**
+     * module별 Test task 인자: `:core:test --tests 'com.acme.FooTest.works' :app:test --tests ...`.
+     * `--tests`는 바로 앞 task에만 걸리므로 impacted test가 없는 module이 "No tests found"로 실패하지 않는다.
+     * test 이름에 공백이 있을 수 있으므로 작은따옴표로 감싼다. `| xargs ./gradlew`로 넘긴다(xargs는 따옴표를 해석한다).
+     * parameter type은 filter로 표현할 수 없어 method 이름까지만 쓴다.
+     */
+    private fun gradleFilter(tests: List<RankedTest>, modules: Map<String, String>): List<String> = tests
+        .groupBy { modules[it.test.className] ?: ":" }
+        .toSortedMap()
+        .flatMap { (module, list) ->
+            val task = if (module == ":") ":test" else "$module:test"
+            listOf(task) + list
+                .map { t -> if (t.test.method == null) t.test.className else "${t.test.className}.${t.test.method}" }
+                .distinct()
+                .flatMap { listOf("--tests", "'" + it.replace("'", "?") + "'") }
+        }
+
+    /** test class 이름 -> module path. head snapshot의 test source set에서 찾는다. */
+    private fun testModules(analysis: Analysis): Map<String, String> {
+        val testSets = analysis.resolved.headModel.modules.flatMap { it.sourceSets }.filter { it.isTest }.map { it.id }.toSet()
+        return analysis.resolved.head.sourceSets.filter { it.id in testSets }
+            .flatMap { ss -> ss.classes.values.map { it.id.binaryName to ss.id.module.path } }
+            .toMap()
+    }
 }

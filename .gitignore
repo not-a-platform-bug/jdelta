@@ -33,6 +33,10 @@ Desktop.ini
 # Gradle
 .gradle/
 **/build/
+# iCloud Drive 등 동기화 도구가 만드는 충돌 복사본 (예: "build 2", ".gradle 3")
+.gradle [0-9]*
+**/build [0-9]*
+**/.kotlin [0-9]*
 !gradle/wrapper/gradle-wrapper.jar
 
 # Maven

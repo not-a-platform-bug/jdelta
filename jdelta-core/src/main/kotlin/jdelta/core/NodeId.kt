@@ -152,7 +152,8 @@ internal object NodeIdParser {
         if (hash >= 0) {
             val owner = ClassId(module, rest.substring(0, hash))
             val nameAndDesc = rest.substring(hash + 1)
-            val paren = nameAndDesc.indexOf('(')
+            // Kotlin backtick 이름처럼 method 이름에 '('가 들어갈 수 있다. descriptor의 '('는 하나뿐이므로 마지막 것이 경계다.
+            val paren = nameAndDesc.lastIndexOf('(')
             require(paren > 0) { "method id without descriptor: $rest" }
             return MethodId(owner, nameAndDesc.substring(0, paren), nameAndDesc.substring(paren))
         }
@@ -176,7 +177,7 @@ internal object NodeIdParser {
         val hash = rest.indexOf('#')
         if (hash < 0) return TestId(engine, rest)
         val methodPart = rest.substring(hash + 1)
-        val paren = methodPart.indexOf('(')
+        val paren = methodPart.lastIndexOf('(') // parameter type에는 '('가 없다
         require(paren > 0 && methodPart.endsWith(")")) { "invalid test method id: $s" }
         return TestId(
             engine = engine,

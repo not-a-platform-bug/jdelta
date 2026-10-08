@@ -121,6 +121,51 @@ report 예시(scenario 3, 발췌):
 | 1 | `com.acme.app.CheckoutServiceTest#checksOut()` | OBSERVED | CheckoutService#checkout(Order) → CheckoutServiceTest#checksOut() |
 ```
 
+## 언제 쓰면 좋은가
+
+**잘 맞는 경우**
+
+- **test suite가 몇 분씩 걸리는 Gradle multi-module project.** 영향받는 test를 먼저 돌려 전체 suite가 끝나기 전에 실패 신호를 얻는다. 아래 측정에서 선택된 test는 전체 test 시간의 3~41%였다.
+- **PR review와 CI report.** test trace가 없어도 `jdelta diff`가 각 변경의 ABI 수준 의미를 보여준다. downstream 재컴파일이 필요한지, 상수가 inline되었는지, Kotlin `inline` body가 바뀌었는지, framework metadata가 바뀌었는지.
+- **Java/Kotlin 혼용, annotation processor, reflection 중심 framework를 쓰는 code.** "파일이 바뀌었다"만으로는 실제 영향을 알기 어려운 경우다.
+- **library나 공용 module 관리자.** 변경이 의존하는 쪽의 compile/binary 호환성을 깨는지 알고 싶을 때.
+
+**덜 유용한 경우**
+
+- **작고 빠른 test suite.** 10초 정도면 끝나는 suite에서는 Gradle의 고정 비용(약 2.5초)이 커서 impacted-first로 줄어드는 시간이 몇 초뿐이다.
+- **거의 모든 code가 실행하는 부분의 변경**(core utility, 상수, build script). 많은 test가 선택되거나 module 전체로 물러서고, report가 그 사실을 알려준다.
+- **Gradle + JUnit이 아니거나, test가 주로 resource와 외부 설정에 의존하는 project.** resource 변경은 항상 보수적으로 다룬다.
+
+## 측정 결과
+
+jdelta 자신의 repository 사본에 jdelta를 돌려 측정했다. Gradle module 10개, trace가 기록된 test method 93개, 전체 suite wall time 10.6초(병렬 fork의 test 시간 합 34.8초). Apple M2 Pro(12 core), JDK 25, Gradle 9.5.1. 작은 repository 하나와 몇 가지 변경으로 잰 값이므로 벤치마크가 아니라 경향으로 읽어야 한다.
+
+**비용**
+
+| 항목 | 결과 |
+|---|---|
+| 기록 오버헤드(`jdelta record`) | 전체 suite 11.0–12.7초 → agent 사용 시 12.3–13.3초 (약 +5~10%, 편차 있음) |
+| test당 기록된 method 수 | 중앙값 179, 최대 535 |
+| 저장 공간 | trace store 1.9 MB, snapshot 하나 2.3 MB |
+| 분석 시간(`impacted-tests`, build 이후) | 0.7–1.0초 |
+
+**대표적인 변경에서의 선택**
+
+| 변경 | 선택된 test (93개 중) | test 시간 비중 | phase 1 wall time* |
+|---|---|---|---|
+| report 출력 형식 body | 9 (`OBSERVED`) | 20% | 5.4초 |
+| 널리 쓰이는 core ID parser body | 13 (`OBSERVED`) | 27% | 5.4초 |
+| 분류기의 private method | 4 (`OBSERVED`) | 3% | 2.9초 |
+| 주석만 변경 | 0 | 0% | – |
+| core enum에 public method 추가 | 24 (`INFERRED`) | 36% | 6.0초 |
+| `const val` 변경 | 29 (`OBSERVED` 7, `INFERRED` 12, 보수적 10) | 41% | 6.5초 |
+
+\* 선택된 test만 Gradle로 실행한 시간이며 Gradle 고정 비용 약 2.5초를 포함한다. 전체 suite는 10.6초다. 이와 별도로 trace가 없는 test 10개(e2e suite처럼 tag로 `test` task에서 빠진 test)는 항상 포함된다.
+
+**놓친 실패가 있었나?**
+
+실제로 test를 깨뜨린 변경 4개에서 전체 suite 실패가 5건 나왔다. **5건 모두 선택된 test에 포함되었고(놓친 것 0건)**, 순위는 1~9위였다. test를 깨뜨리지 않은 변경 2개는 놓침 여부를 확인할 수 없었다.
+
 ## 시작하기
 
 JDK 17 이상이 필요하다.
@@ -139,7 +184,7 @@ jdelta record -- ./gradlew test
 # 2. 변경 후: merge-base 대비 의미적 변경 + 영향받는 test
 jdelta diff main --build                 # Markdown report (--format json)
 jdelta impacted-tests main               # 순서대로 (--format json | gradle-filter)
-./gradlew test $(jdelta impacted-tests main --format gradle-filter)
+jdelta impacted-tests main --format gradle-filter | xargs ./gradlew
 
 # 3. 또는 Gradle에서 impacted-first 실행
 ./gradlew test -Pjdelta.impactedFirst=true -Pjdelta.home=<jdelta 배포본> -Pjdelta.base=main

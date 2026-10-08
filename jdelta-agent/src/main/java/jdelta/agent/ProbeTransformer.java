@@ -34,7 +34,7 @@ final class ProbeTransformer implements ClassFileTransformer {
 
     @Override
     public byte[] transform(ClassLoader loader, String className, Class<?> classBeingRedefined, ProtectionDomain domain, byte[] bytes) {
-        if (className == null || classBeingRedefined != null || domain == null || className.startsWith("jdelta/")) return null;
+        if (className == null || classBeingRedefined != null || domain == null || isAgentClass(className)) return null;
         String module = moduleOf(domain.getCodeSource());
         if (module == null) return null;
         try {
@@ -48,6 +48,12 @@ final class ProbeTransformer implements ClassFileTransformer {
             System.err.println("jdelta: cannot instrument " + className + ": " + e);
             return null;
         }
+    }
+
+    /** agent 자신과 listener. 사용자 code의 package 이름과 겹치지 않도록 좁게 잡는다. */
+    private static boolean isAgentClass(String className) {
+        return className.startsWith("jdelta/runtime/") || className.startsWith("jdelta/agent/")
+            || className.startsWith("jdelta/junit/") || className.startsWith("jdelta/shaded/");
     }
 
     private String moduleOf(CodeSource source) {

@@ -1,4 +1,4 @@
-import jdelta.build.RelocatedJar
+import jdelta.buildlogic.RelocatedJar
 
 // test JVM 안에서 실행된다. plain Java, ASM은 relocate해서 jar에 넣는다 (ARCHITECTURE.md D8, §8.1).
 plugins {
